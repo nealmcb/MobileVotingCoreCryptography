@@ -363,6 +363,7 @@ pub struct PublicKey<C: Context> {
     /// The value `w` is never constructed, `z` is derived from a random oracle.
     pub pk_a: C::Element,
 }
+
 impl<C: Context> PublicKey<C> {
     /// Constructs a new public key with the given public values.
     ///

@@ -1,2 +1,13 @@
-// Declares the voting_application submodule, making it part of the participants module.
+/*! Declares all submodules for actors. Namely, these are:
+ * - The Ballot Check Application (BCA)
+ * - The Digital Ballot Box (DBB)
+ * - Election Administration Server (EAS)
+ * - Trustee Administration Server (TAS)
+ * - The Voting Application (VA)
+ */
+
+/// Declares the Ballot Check Application (BCA) submodule.
+pub mod ballot_check_application;
+
+/// Declares the Voting Application (VA) submodule.
 pub mod voting_application;
