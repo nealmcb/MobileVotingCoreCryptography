@@ -48,7 +48,7 @@ pub struct Ballot {
 /// Election hashes uniquely identify an election and are used throughout
 /// the protocol for verification and consistency checks.
 /// Fixed-size 32-byte array (256 bits) compatible with SHA-256.
-pub type ElectionHash = [u8; 32];
+pub type ElectionHash = crate::crypto::CryptoHash;
 
 /// Type alias for ballot style identifiers.
 ///
@@ -72,28 +72,19 @@ pub type VoterPseudonym = String;
 // Utility Functions
 // =============================================================================
 
-/// Create an ElectionHash from a string using SHA3-256.
+/// Create an ElectionHash from a string using the context hasher.
 ///
-/// This function creates a cryptographically secure 32-byte hash using SHA3-256
-/// from the crypto library. It can be used for both testing and production.
+/// This function creates a cryptographically secure hash using the
+/// context hasher, set to `Sha3_512`. It can be used for both testing and production.
 ///
 /// # Arguments
 /// * `s` - The input string to hash
 ///
 /// # Returns
-/// A 32-byte SHA3-256 hash suitable for use as an ElectionHash
+/// A hash (64-byte Sha3_512) suitable for use as an ElectionHash
 pub fn string_to_election_hash(s: &str) -> ElectionHash {
-    use crypto::utils::hash::{Hasher, Hasher256};
-    use sha3::Digest;
-
-    let mut hasher = Hasher256::hasher();
-    hasher.update(s.as_bytes());
-    let result = hasher.finalize();
-
-    // Convert to [u8; 32] array
-    let mut hash = [0u8; 32];
-    hash.copy_from_slice(&result);
-    hash
+    use crate::crypto::hash_serializable;
+    hash_serializable(&s.to_string())
 }
 
 impl Ballot {

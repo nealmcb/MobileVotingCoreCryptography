@@ -19,13 +19,14 @@ use crypto::cryptosystem::elgamal::{KeyPair as EGKeyPair, PublicKey as EGPublicK
 use crypto::cryptosystem::naoryung::{
     Ciphertext as NYCiphertext, KeyPair as NYKeyPair, PublicKey as NYPublicKey,
 };
-use crypto::traits::groups::{CryptoGroup, GroupElement, GroupScalar};
+use crypto::traits::groups::{CryptoGroup, GroupScalar};
 pub use crypto::utils::serialization::{VDeserializable, VSerializable};
 use crypto::utils::signatures::{SignatureScheme, Signer, Verifier};
 use crypto::zkp::pleq::PlEqProof;
 
-use crypto::utils::hash::Hasher as _;
-use sha3::Digest;
+pub use crypto::utils::hash::Hasher as OldHasher;
+pub use crypto::utils::hash::Hasher256;
+pub use sha3::Digest;
 
 // =============================================================================
 // Constants
@@ -62,6 +63,7 @@ pub type Signature = <<CryptoContext as Context>::SignatureScheme as SignatureSc
 
 /// The Hasher instance as defined by the crypto context.
 pub(crate) type Hasher = <CryptoContext as crypto::context::Context>::Hasher;
+
 /// The Hash output type as defined by the crypto context.
 pub(crate) type CryptoHash = sha3::digest::Output<Hasher>;
 
@@ -243,6 +245,26 @@ pub fn encryption_context(election_hash: &ElectionHash) -> Vec<u8> {
     context
 }
 
+/// Return the encryption context for ballot checking randomizer
+/// encryption. This context is used by both the VA and the BCA.
+///
+/// The context is derived from parameters known to both:
+/// - election_hash: known to both from the election setup
+/// - bca_verifying_key: sent by BCA in CheckReqMsg, known to VA
+///   after receiving the request
+pub fn ballot_check_context(
+    election_hash: &ElectionHash,
+    bca_verifying_key: &VerifyingKey,
+) -> String {
+    // Convert election hash to hex string inline
+    let election_hash_hex: String = election_hash
+        .iter()
+        .map(|byte| format!("{:02x}", byte))
+        .collect();
+
+    format!("ballot_check;{};{:?}", election_hash_hex, bca_verifying_key)
+}
+
 /// Encrypt a complete ballot and return both the cryptogram and randomizers
 pub fn encrypt_ballot(
     ballot: Ballot,
@@ -294,24 +316,18 @@ pub fn decrypt_ballot(
         .strip(ballot_cryptogram.ciphertext.clone(), &decryption_context)
         .map_err(|e| format!("Failed to strip Naor-Yung proof: {:?}", e))?;
 
-    // Decrypt using ElGamal with randomizers
-    let mut decrypted_elements =
-        [<CryptoContext as Context>::Element::one(); BALLOT_CIPHERTEXT_WIDTH];
-    // The range loop is not easily replaced here, so we allow it!
-    #[allow(clippy::needless_range_loop)]
-    for i in 0..BALLOT_CIPHERTEXT_WIDTH {
-        let randomizer = if i < randomizers.randomizers.len() {
-            &randomizers.randomizers[i]
-        } else {
-            &Randomizer::zero() // Use zero for any missing randomizers
-        };
-        let pk_to_r = election_public_key.pk_b.exp(randomizer);
-        let pk_to_r_inv = pk_to_r.inv();
-        decrypted_elements[i] = elgamal_ciphertext.v()[i].mul(&pk_to_r_inv);
-    }
+    // Alternative to above block using decrypt_with_r
+    let egpk = EGPublicKey::<CryptoContext>::new(election_public_key.pk_b);
+    let randomizers: [Randomizer; BALLOT_CIPHERTEXT_WIDTH] = randomizers
+        .randomizers
+        .clone()
+        .try_into()
+        .map_err(|_| "Failed to convert randomizers to fixed array")?;
+    let decrypted = egpk
+        .decrypt_with_r(&elgamal_ciphertext, &randomizers)
+        .map_err(|e| format!("Failed to decrypt ballot: {:?}", e))?;
 
-    // Decode the elements back to a ballot
-    decode_ballot(&decrypted_elements)
+    decode_ballot(&decrypted)
 }
 
 /// Verify a Naor-Yung proof in a ballot ciphertext
@@ -320,23 +336,11 @@ pub fn verify_ciphertext_proof(
     election_pk: &ElectionKey,
     election_hash: &ElectionHash,
 ) -> Result<bool, String> {
-    // Create verification context - must match encryption context exactly
     let verification_context = encryption_context(election_hash);
 
-    // Extract public key components
-    let y = &election_pk.pk_b; // ElGamal public key component
-    let z = &election_pk.pk_a; // Second public key component
+    let result = election_pk.strip(ciphertext.clone(), &verification_context);
 
-    // Extract ciphertext components and proof
-    let proof = &ciphertext.proof;
-    let u_b = &ciphertext.u_b;
-    let v_b = &ciphertext.v_b;
-    let u_a = &ciphertext.u_a;
-
-    // Verify the PlEq proof
-    proof
-        .verify(y, z, u_b, v_b, u_a, &verification_context)
-        .map_err(|e| format!("Proof verification failed: {:?}", e))
+    Ok(result.is_ok())
 }
 
 // =============================================================================
@@ -427,6 +431,9 @@ pub fn decrypt_randomizers(
     })
 }
 
+/// Hash a serializable value using the context provided hasher
+///
+/// The hasher is defined as `<CryptoContext as crypto::context::Context>::Hasher`
 pub(crate) fn hash_serializable<T: VSerializable>(value: &T) -> CryptoHash {
     let bytes = value.ser();
     let mut hasher = Hasher::hasher();

@@ -59,7 +59,7 @@ pub use participants::voting_application::{
         SubprotocolOutput,
         // The main actor struct.
         TopLevelActor,
-        VoterAuthenticationSuccess,
+        VoterAuthenticationResult,
     },
 };
 

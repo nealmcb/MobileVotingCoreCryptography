@@ -7,10 +7,8 @@ one via cryptographic hash, creating an immutable audit trail.
 */
 
 use crate::bulletins::Bulletin;
+use crate::crypto::{Digest, Hasher256, OldHasher, VSerializable};
 use crate::elections::BallotTracker;
-use crypto::utils::hash::{Hasher, Hasher256};
-use crypto::utils::serialization::VSerializable;
-use sha3::Digest;
 use std::collections::HashMap;
 
 // =============================================================================

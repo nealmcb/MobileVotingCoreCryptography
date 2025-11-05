@@ -573,6 +573,22 @@ impl<S: DBBStorage, B: BulletinBoard> DigitalBallotBoxActor<S, B> {
             })
             .collect()
     }
+
+    // --- Test API ---
+
+    /// Returns a reference to the bulletin board for testing purposes,
+    /// to allow tests to verify predicates about its contents.
+    #[cfg(test)]
+    pub(crate) fn bulletin_board(&self) -> &B {
+        &self.bulletin_board
+    }
+
+    /// Returns a reference to the storage for testing purposes,
+    /// to allow tests to verify predicates about stored data.
+    #[cfg(test)]
+    pub(crate) fn storage(&self) -> &S {
+        &self.storage
+    }
 }
 
 #[cfg(test)]

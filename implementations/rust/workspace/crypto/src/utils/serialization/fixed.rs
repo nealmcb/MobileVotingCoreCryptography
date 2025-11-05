@@ -21,9 +21,8 @@
 //! This module provides fixed length serialization
 //! implementations for
 //!
-//! - Structs annotated with `vser` macro derives
-//! - Generic (heterogeneous) tuples
-//! - Generic (homogeneous) arrays
+//! - Generic structs/tuples annotated with `vser` macro derives
+//! - Array[N; T]
 
 use crate::utils::error::Error;
 use crate::utils::serialization::{TFTuple, get_slice};

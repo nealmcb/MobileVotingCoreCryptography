@@ -2009,8 +2009,9 @@ mod tests {
         checker.assert_properties();
 
         println!(
-            "Explored {} states for full protocol (3 trustees, threshold 2)",
-            checker.state_count()
+            "Model checking complete - explored {} states ({} unique)",
+            checker.state_count(),
+            checker.unique_state_count()
         );
     }
 
@@ -2028,8 +2029,9 @@ mod tests {
         checker.assert_properties();
 
         println!(
-            "Explored {} states for full protocol (5 trustees, threshold 3)",
-            checker.state_count()
+            "Model checking complete - explored {} states ({} unique)",
+            checker.state_count(),
+            checker.unique_state_count()
         );
     }
 
@@ -2046,8 +2048,9 @@ mod tests {
         checker.assert_properties();
 
         println!(
-            "Explored {} states for setup+DKG (7 trustees, threshold 4)",
-            checker.state_count()
+            "Model checking complete - explored {} states ({} unique)",
+            checker.state_count(),
+            checker.unique_state_count()
         );
     }
 
@@ -2067,8 +2070,9 @@ mod tests {
         checker.assert_properties();
 
         println!(
-            "Explored {} states for 3 trustees with drops",
-            checker.state_count()
+            "Model checking complete - explored {} states ({} unique)",
+            checker.state_count(),
+            checker.unique_state_count()
         );
     }
 
@@ -2086,8 +2090,9 @@ mod tests {
         checker.assert_properties();
 
         println!(
-            "Explored {} states for 3 trustees with multiple drops",
-            checker.state_count()
+            "Model checking complete - explored {} states ({} unique)",
+            checker.state_count(),
+            checker.unique_state_count()
         );
     }
 
@@ -2105,8 +2110,9 @@ mod tests {
         checker.assert_properties();
 
         println!(
-            "Explored {} states for 3 trustees with duplicates",
-            checker.state_count()
+            "Model checking complete - explored {} states ({} unique)",
+            checker.state_count(),
+            checker.unique_state_count()
         );
     }
 
@@ -2126,8 +2132,9 @@ mod tests {
         checker.assert_properties();
 
         println!(
-            "Explored {} states for 3 trustees with drops and duplicates",
-            checker.state_count()
+            "Model checking complete - explored {} states ({} unique)",
+            checker.state_count(),
+            checker.unique_state_count()
         );
     }
 
@@ -2147,8 +2154,9 @@ mod tests {
         checker.assert_properties();
 
         println!(
-            "Explored {} states for Byzantine small test",
-            checker.state_count()
+            "Model checking complete - explored {} states ({} unique)",
+            checker.state_count(),
+            checker.unique_state_count()
         );
     }
 
@@ -2167,8 +2175,9 @@ mod tests {
         checker.assert_properties();
 
         println!(
-            "Explored {} states for Byzantine small test with drops",
-            checker.state_count()
+            "Model checking complete - explored {} states ({} unique)",
+            checker.state_count(),
+            checker.unique_state_count()
         );
     }
 
@@ -2187,8 +2196,9 @@ mod tests {
         checker.assert_properties();
 
         println!(
-            "Explored {} states for Byzantine small test with duplicates",
-            checker.state_count()
+            "Model checking complete - explored {} states ({} unique)",
+            checker.state_count(),
+            checker.unique_state_count()
         );
     }
 
@@ -2209,8 +2219,9 @@ mod tests {
         checker.assert_properties();
 
         println!(
-            "Explored {} states for Byzantine small test with drops and duplicates",
-            checker.state_count()
+            "Model checking complete - explored {} states ({} unique)",
+            checker.state_count(),
+            checker.unique_state_count()
         );
     }
 
@@ -2229,8 +2240,9 @@ mod tests {
         checker.assert_properties();
 
         println!(
-            "Explored {} states for Byzantine medium test",
-            checker.state_count()
+            "Model checking complete - explored {} states ({} unique)",
+            checker.state_count(),
+            checker.unique_state_count()
         );
     }
 
@@ -2251,8 +2263,9 @@ mod tests {
         checker.assert_properties();
 
         println!(
-            "Explored {} states for Byzantine medium test with drops and duplicates",
-            checker.state_count()
+            "Model checking complete - explored {} states ({} unique)",
+            checker.state_count(),
+            checker.unique_state_count()
         );
     }
 
@@ -2271,8 +2284,9 @@ mod tests {
         checker.assert_properties();
 
         println!(
-            "Explored {} states for Byzantine large test",
-            checker.state_count()
+            "Model checking complete - explored {} states ({} unique)",
+            checker.state_count(),
+            checker.unique_state_count()
         );
     }
 

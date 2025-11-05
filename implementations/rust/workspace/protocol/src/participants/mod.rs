@@ -16,3 +16,11 @@ pub mod digital_ballot_box;
 
 /// Declares the Voting Application (VA) submodule.
 pub mod voting_application;
+
+/// Basic integration tests for internet-facing protocol actors.
+#[cfg(test)]
+mod integration_tests_basic;
+
+/// Stateright model-based integration tests for internet-facing protocol actors.
+#[cfg(test)]
+mod integration_tests;

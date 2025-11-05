@@ -52,7 +52,7 @@ pub enum BallotCheckOutcome {
 // --- II. Actor Implementation ---
 
 /// The sub-states for the Ballot Checking protocol.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum SubState {
     ReadyToStart,
     AwaitingRequest,
@@ -60,6 +60,7 @@ enum SubState {
 }
 
 /// The actor for the Ballot Checking subprotocol.
+#[derive(Clone, Debug)]
 pub struct CheckingActor {
     state: SubState,
     // --- Injected State from TopLevelActor ---
@@ -286,8 +287,12 @@ impl CheckingActor {
         let bca_public_key = &check_req.data.public_enc_key;
 
         // Use the updated crypto API to encrypt randomizers
-        let context_prefix = "ballot_check";
-        crate::crypto::encrypt_randomizers(randomizers, bca_public_key, context_prefix)
+        // The context is derived from parameters both VA and BCA can agree upon
+        let context = crate::crypto::ballot_check_context(
+            &self.election_hash,
+            &check_req.data.public_sign_key,
+        );
+        crate::crypto::encrypt_randomizers(randomizers, bca_public_key, &context)
     }
 
     // --- Encrypted Randomizer Checks (Self-Validation) ---

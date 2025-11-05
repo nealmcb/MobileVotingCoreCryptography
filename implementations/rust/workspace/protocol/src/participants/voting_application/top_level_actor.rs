@@ -49,12 +49,13 @@ pub enum SubprotocolOutput {
 
 // Re-export for public API
 pub use super::sub_actors::{
-    authentication::VoterAuthenticationSuccess, casting::BallotCastingSuccess,
+    authentication::VoterAuthenticationResult, casting::BallotCastingSuccess,
     checking::BallotCheckOutcome, submission::BallotSubmissionSuccess,
 };
 
 // --- Active Subprotocol Enum ---
 
+#[derive(Clone, Debug)]
 pub enum ActiveSubprotocol {
     Idle,
     Authentication(AuthenticationActor),
@@ -65,6 +66,7 @@ pub enum ActiveSubprotocol {
 
 // --- Top-Level Actor ---
 
+#[derive(Clone, Debug)]
 pub struct TopLevelActor {
     active_subprotocol: ActiveSubprotocol,
     election_hash: ElectionHash,
@@ -287,14 +289,18 @@ impl TopLevelActor {
     /// Handle state updates and transitions based on subprotocol outputs
     fn handle_state_updates(&mut self, output: &SubprotocolOutput) {
         match output {
-            SubprotocolOutput::Authentication(AuthenticationOutput::Success(success)) => {
-                self.voter_pseudonym = Some(success.voter_pseudonym.clone());
-                // Extract keys from the authentication actor
-                if let ActiveSubprotocol::Authentication(auth_actor) = &self.active_subprotocol {
+            SubprotocolOutput::Authentication(AuthenticationOutput::Success(result)) => {
+                // Whether authentication succeeded or failed, these assignments still work
+                // (because the values are guaranteed by subactor checks to be None if it failed).
+                self.voter_pseudonym = result.voter_pseudonym.clone();
+                self.voter_ballot_style = result.ballot_style;
+                // Extract keys from the authentication actor if authentication was successful
+                if result.result.0
+                    && let ActiveSubprotocol::Authentication(auth_actor) = &self.active_subprotocol
+                {
                     self.voter_session_signing_key = Some(auth_actor.session_signing_key.clone());
                     self.voter_session_verifying_key = Some(auth_actor.session_verifying_key);
                 }
-                self.voter_ballot_style = Some(success.ballot_style);
                 self.active_subprotocol = ActiveSubprotocol::Idle;
             }
             SubprotocolOutput::Authentication(AuthenticationOutput::Failure(_)) => {
@@ -328,5 +334,25 @@ impl TopLevelActor {
             // Non-terminal outputs don't change state
             _ => {}
         }
+    }
+
+    // Getter methods for integration testing
+
+    /// Returns the voter pseudonym if authentication completed successfully
+    #[cfg(test)]
+    pub(crate) fn voter_pseudonym(&self) -> Option<&VoterPseudonym> {
+        self.voter_pseudonym.as_ref()
+    }
+
+    /// Returns the ballot tracker if a ballot was successfully submitted
+    #[cfg(test)]
+    pub(crate) fn ballot_tracker(&self) -> Option<&BallotTracker> {
+        self.ballot_tracker.as_ref()
+    }
+
+    /// Returns the ballot randomizers if a ballot was successfully submitted
+    #[cfg(test)]
+    pub(crate) fn ballot_randomizers(&self) -> Option<&RandomizersStruct> {
+        self.ballot_randomizers.as_ref()
     }
 }

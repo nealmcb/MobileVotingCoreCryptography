@@ -22,9 +22,10 @@
 //! This module provides variable length serialization
 //! implementations for
 //!
-//! - Generic (heterogeneous) tuples
-//! - Generic (homogeneous) arrays
-//! - Generic (homogeneous) vectors
+//! - Generic structs/tuples annotated with `vser` macro derives
+//! - Array[N; T]
+//! - Vec<T>
+//! - Option<T>
 //! - [`LargeVector`] (for performant serialization on large data)
 //! - u8, u16, u32, u64, u128
 //! - String
@@ -181,7 +182,7 @@ impl<T: VDeserializable> VDeserializable for Vec<T> {
 ///
 /// - `Length Prefix` is the big endian representation of the `LengthU`
 ///   value corresponding to the number of bytes in `Value Bytes`
-/// - `Value Bytes` is the byte representation the correponding instance of `T`
+/// - `Value Bytes` is the byte representation of an instance of `T`
 ///   resulting from calling `T::ser` on that instance
 ///
 /// # Panics

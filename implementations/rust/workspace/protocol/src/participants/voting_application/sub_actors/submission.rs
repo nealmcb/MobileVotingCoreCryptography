@@ -52,7 +52,7 @@ pub struct BallotSubmissionSuccess {
 // --- II. Actor Implementation ---
 
 /// The sub-states for the Ballot Submission protocol.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum SubState {
     ReadyToStart,
     AwaitingTracker,
@@ -60,6 +60,7 @@ enum SubState {
 }
 
 /// The actor for the Ballot Submission subprotocol.
+#[derive(Clone, Debug)]
 pub struct SubmissionActor {
     state: SubState,
     // --- Injected State from TopLevelActor ---
@@ -190,16 +191,28 @@ impl SubmissionActor {
                     return SubmissionOutput::Failure(error);
                 }
 
-                let tracker = tracker_msg.data.tracker.clone();
-                self.state = SubState::AwaitingBulletin { tracker_msg };
-                SubmissionOutput::FetchBulletin(tracker)
+                if tracker_msg.data.submission_result.0 {
+                    let tracker = tracker_msg
+                        .data
+                        .tracker
+                        .clone()
+                        .expect("tracker must exist in successful submission reply");
+                    self.state = SubState::AwaitingBulletin { tracker_msg };
+                    SubmissionOutput::FetchBulletin(tracker)
+                } else {
+                    // The submission failed for a specific reason.
+                    SubmissionOutput::Failure(tracker_msg.data.submission_result.1)
+                }
             }
 
             (SubState::AwaitingBulletin { tracker_msg }, SubmissionInput::PBBData(bulletin)) => {
                 // Perform final verification that the bulletin contains our ballot
                 match self.perform_bulletin_verification_checks(&bulletin) {
                     Ok(_) => SubmissionOutput::Success(BallotSubmissionSuccess {
-                        tracker: tracker_msg.data.tracker,
+                        tracker: tracker_msg
+                            .data
+                            .tracker
+                            .expect("tracker must exist if we are waiting for a bulletin"),
                         randomizers: self
                             .generated_randomizers
                             .clone()
@@ -424,7 +437,8 @@ mod tests {
         // Test TrackerMsgData serialization
         let tracker_data = crate::messages::TrackerMsgData {
             election_hash,
-            tracker: "tracker_123".to_string(),
+            tracker: Some("tracker_123".to_string()),
+            submission_result: (true, "".to_string()),
         };
         let serialized_tracker = tracker_data.ser();
         assert!(

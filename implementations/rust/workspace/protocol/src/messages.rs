@@ -118,7 +118,8 @@ pub struct SignedBallotMsg {
 #[derive(Debug, Clone, PartialEq, VSerializable)]
 pub struct TrackerMsgData {
     pub election_hash: ElectionHash,
-    pub tracker: BallotTracker,
+    pub tracker: Option<BallotTracker>,
+    pub submission_result: (bool, String),
 }
 
 /// Sent from DBB to VA to confirm ballot submission with a unique tracker.
@@ -152,7 +153,8 @@ pub struct CastReqMsg {
 pub struct CastConfMsgData {
     pub election_hash: ElectionHash,
     pub ballot_sub_tracker: BallotTracker,
-    pub ballot_cast_tracker: BallotTracker,
+    pub ballot_cast_tracker: Option<BallotTracker>,
+    pub cast_result: (bool, String),
 }
 
 /// Sent from DBB to VA to confirm that the ballot has been cast.
@@ -324,7 +326,8 @@ mod tests {
         // Test TrackerMsg
         let tracker_data = TrackerMsgData {
             election_hash: crate::elections::string_to_election_hash("test_election"),
-            tracker: "ballot_tracker_xyz789".to_string(),
+            tracker: Some("ballot_tracker_xyz789".to_string()),
+            submission_result: (true, "".to_string()),
         };
         let tracker_msg = TrackerMsg {
             data: tracker_data,

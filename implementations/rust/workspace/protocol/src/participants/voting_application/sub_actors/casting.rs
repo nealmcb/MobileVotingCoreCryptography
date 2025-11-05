@@ -40,13 +40,14 @@ pub struct BallotCastingSuccess {
 // --- II. Actor Implementation ---
 
 /// The sub-states for the Ballot Casting protocol.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum SubState {
     ReadyToStart,
     AwaitingConfirmation,
 }
 
 /// The actor for the Ballot Casting subprotocol.
+#[derive(Clone, Debug)]
 pub struct CastingActor {
     state: SubState,
     // --- Injected State from TopLevelActor ---
@@ -105,14 +106,23 @@ impl CastingActor {
                 SubState::AwaitingConfirmation,
                 CastingInput::NetworkMessage(ProtocolMessage::CastConf(conf_msg)),
             ) => {
-                // Perform Cast Confirmation Checks from the spec
-                if let Err(reason) = self.perform_cast_confirmation_checks(&conf_msg) {
-                    return CastingOutput::Failure(reason);
-                }
+                if conf_msg.data.cast_result.0 {
+                    // Perform Cast Confirmation Checks from the spec
+                    if let Err(reason) = self.perform_cast_confirmation_checks(&conf_msg) {
+                        return CastingOutput::Failure(reason);
+                    }
 
-                CastingOutput::Success(BallotCastingSuccess {
-                    cast_tracker: conf_msg.data.ballot_cast_tracker.clone(),
-                })
+                    CastingOutput::Success(BallotCastingSuccess {
+                        cast_tracker: conf_msg
+                            .data
+                            .ballot_cast_tracker
+                            .clone()
+                            .expect("cast tracker must exist if cast succeeded"),
+                    })
+                } else {
+                    // Casting failed, relay the reason why.
+                    CastingOutput::Failure(conf_msg.data.cast_result.1.clone())
+                }
             }
 
             _ => CastingOutput::Failure("Invalid input for current state".to_string()),
@@ -130,7 +140,13 @@ impl CastingActor {
     fn perform_cast_confirmation_checks(&self, conf_msg: &CastConfMsg) -> Result<(), String> {
         self.check_conf_election_hash(&conf_msg.data.election_hash)?;
         self.check_conf_ballot_sub_tracker(&conf_msg.data.ballot_sub_tracker)?;
-        self.check_conf_message_locator(&conf_msg.data.ballot_cast_tracker)?;
+        self.check_conf_message_locator(
+            &conf_msg
+                .data
+                .ballot_cast_tracker
+                .clone()
+                .expect("cast tracker must exist if these checks are being done"),
+        )?;
         self.check_conf_signature(&conf_msg.data, &conf_msg.signature)?;
 
         Ok(())
@@ -318,7 +334,8 @@ mod tests {
         let cast_conf_data = crate::messages::CastConfMsgData {
             election_hash: crate::elections::string_to_election_hash(&election_hash),
             ballot_sub_tracker: "sub_tracker_123".to_string(),
-            ballot_cast_tracker: "cast_tracker_456".to_string(),
+            ballot_cast_tracker: Some("cast_tracker_456".to_string()),
+            cast_result: (true, "".to_string()),
         };
         let serialized_cast_conf = cast_conf_data.ser();
         assert!(

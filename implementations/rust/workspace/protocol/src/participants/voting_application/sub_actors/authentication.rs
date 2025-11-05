@@ -7,7 +7,8 @@
 use crate::crypto::{Signature, SigningKey, VerifyingKey};
 use crate::elections::{BallotStyle, ElectionHash, VoterPseudonym};
 use crate::messages::{
-    AuthFinishMsg, AuthFinishMsgData, AuthReqMsg, AuthVoterMsg, HandTokenMsg, ProtocolMessage,
+    AuthFinishMsg, AuthFinishMsgData, AuthReqMsg, ConfirmAuthorizationMsg, HandTokenMsg,
+    ProtocolMessage,
 };
 use crypto::utils::serialization::VSerializable;
 
@@ -33,26 +34,30 @@ pub enum AuthenticationOutput {
     /// A request for the host UI to initiate the third-party authentication
     /// process using the provided token.
     RequestThirdPartyAuth(String),
-    /// The protocol has completed successfully.
-    Success(VoterAuthenticationSuccess),
+    /// The protocol has completed successfully, with the specified result.
+    Success(VoterAuthenticationResult),
     /// The protocol has failed.
     Failure(String),
 }
 
-/// Contains the data resulting from a successful authentication.
+/// Contains the data resulting from a successful authentication protocol
+/// run (this is not necessarily a successful authentication).
 #[derive(Debug, Clone)]
-pub struct VoterAuthenticationSuccess {
-    pub voter_pseudonym: VoterPseudonym,
+pub struct VoterAuthenticationResult {
+    /// The authentication result.
+    pub result: (bool, String),
+    /// The voter pseudonym (if authentication was successful).
+    pub voter_pseudonym: Option<VoterPseudonym>,
     /// The session-specific public key generated during this protocol.
     pub session_public_key: VerifyingKey,
     /// The ballot style for this voter from the AuthVoterMsg.
-    pub ballot_style: BallotStyle,
+    pub ballot_style: Option<BallotStyle>,
 }
 
 // --- II. Actor Implementation ---
 
 /// The sub-states for the Voter Authentication protocol.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum SubState {
     ReadyToStart,
     AwaitingToken,
@@ -61,6 +66,7 @@ enum SubState {
 }
 
 /// The actor for the Voter Authentication subprotocol.
+#[derive(Clone, Debug)]
 pub struct AuthenticationActor {
     state: SubState,
     // --- Injected State from TopLevelActor ---
@@ -152,14 +158,17 @@ impl AuthenticationActor {
 
             (
                 SubState::AwaitingAuthorization,
-                AuthenticationInput::NetworkMessage(ProtocolMessage::AuthVoter(auth_msg)),
+                AuthenticationInput::NetworkMessage(ProtocolMessage::ConfirmAuthorization(
+                    auth_msg,
+                )),
             ) => {
                 // Perform "Confirm Authorization Checks" from the spec
                 if let Err(reason) = self.perform_confirm_authorization_checks(&auth_msg) {
                     return AuthenticationOutput::Failure(reason);
                 }
 
-                AuthenticationOutput::Success(VoterAuthenticationSuccess {
+                AuthenticationOutput::Success(VoterAuthenticationResult {
+                    result: auth_msg.data.authentication_result,
                     voter_pseudonym: auth_msg.data.voter_pseudonym,
                     session_public_key: self.session_verifying_key,
                     ballot_style: auth_msg.data.ballot_style,
@@ -226,12 +235,44 @@ impl AuthenticationActor {
     // --- Confirm Authorization Checks (Phase 4) ---
 
     /// Performs all "Confirm Authorization Checks" from the specification
-    fn perform_confirm_authorization_checks(&self, auth_msg: &AuthVoterMsg) -> Result<(), String> {
+    fn perform_confirm_authorization_checks(
+        &self,
+        auth_msg: &ConfirmAuthorizationMsg,
+    ) -> Result<(), String> {
         self.check_auth_voter_election_hash(&auth_msg.data.election_hash)?;
         self.check_auth_voter_verifying_key(&auth_msg.data.voter_verifying_key)?;
         self.check_auth_voter_signature(&auth_msg.data, &auth_msg.signature)?;
-        self.check_auth_voter_pseudonym(&auth_msg.data.voter_pseudonym)?;
-        self.check_auth_voter_ballot_style(&auth_msg.data.ballot_style)?;
+        match auth_msg.data.authentication_result {
+            (true, _) => {
+                self.check_auth_voter_pseudonym(
+                    auth_msg
+                        .data
+                        .voter_pseudonym
+                        .as_ref()
+                        .expect("pseudonym must exist in successful authorization"),
+                )?;
+                self.check_auth_voter_ballot_style(
+                    auth_msg
+                        .data
+                        .ballot_style
+                        .as_ref()
+                        .expect("ballot style must exist in successful authorization"),
+                )?;
+            }
+
+            (false, _) => {
+                if auth_msg.data.voter_pseudonym.is_some() {
+                    return Err(
+                        "pseudonym must not exist in unsuccessful authorization".to_string()
+                    );
+                };
+                if auth_msg.data.ballot_style.is_some() {
+                    return Err(
+                        "ballot style must not exist in unsuccessful authorization".to_string()
+                    );
+                };
+            }
+        }
 
         Ok(())
     }
@@ -258,7 +299,7 @@ impl AuthenticationActor {
     /// Check #3: The signature is a valid signature from the EAS
     fn check_auth_voter_signature(
         &self,
-        data: &crate::messages::AuthVoterMsgData,
+        data: &crate::messages::ConfirmAuthorizationMsgData,
         signature: &Signature,
     ) -> Result<(), String> {
         // Serialize the data for signature verification using VSerializable

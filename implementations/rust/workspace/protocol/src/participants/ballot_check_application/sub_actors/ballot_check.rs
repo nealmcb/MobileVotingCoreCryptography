@@ -13,6 +13,7 @@
 
 // use super::super::top_level_actor::check_signed_ballot;
 
+use crate::crypto::ballot_check_context;
 use crate::crypto::decrypt_ballot;
 use crate::crypto::decrypt_randomizers;
 use crate::crypto::generate_encryption_keypair;
@@ -34,16 +35,6 @@ use crate::messages::{RandomizerMsg, RandomizerMsgData};
 use crate::messages::{SignedBallotMsg, SignedBallotMsgData};
 
 use crypto::utils::serialization::VSerializable;
-
-// --- Utility Functions ---
-
-// @review Perhaps move this into the election module.
-fn election_hash_to_string(election_hash: &ElectionHash) -> String {
-    (*election_hash)
-        .into_iter()
-        .map(|byte: u8| format!("{byte:02x}"))
-        .collect()
-}
 
 // --- I. Actor-Specific I/O ---
 
@@ -118,6 +109,7 @@ enum SubState {
 // actor _by reference_ which saves memory and increases performance. This is,
 // however, not so critical here since individual BCA applications are not
 // expected to handle a large number of ballot-checking requests.
+#[derive(Clone, Debug)]
 pub struct BallotCheckActor {
     state: SubState,
     // --- State injected from [`TopLevelActor`] ---
@@ -155,12 +147,9 @@ impl BallotCheckActor {
         // Create fresh BCA signature key pair for each protocol run.
         let (bca_signing_key, bca_verifying_key) = generate_signature_keypair();
 
-        // @todo Review context creation; needs to be unified across protocols.
-        let mut context: String = "bca_enc_keypair".to_string();
-        context.push(';');
-        context.push_str(election_hash_to_string(&election_hash).as_str());
-        context.push(';');
-        context.push_str(&format!("{bca_verifying_key:?}"));
+        // Use unified context creation for ballot checking
+        // Both VA and BCA use the same context for randomizer encryption/decryption
+        let context = ballot_check_context(&election_hash, &bca_verifying_key);
 
         // Create fresh BCA encrpytion key pair for each protocol run.
         // This enables the VA to securely transmit the randomizers.

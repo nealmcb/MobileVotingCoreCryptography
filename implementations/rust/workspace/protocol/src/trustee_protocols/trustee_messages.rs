@@ -58,7 +58,7 @@ pub trait CheckSignature {
     }
 
     fn originator_id(&self) -> Result<TrusteeID, String> {
-        Err("Originator ID not implemented fro this struct.".to_string())
+        Err("Originator ID not implemented for this struct.".to_string())
     }
 }
 

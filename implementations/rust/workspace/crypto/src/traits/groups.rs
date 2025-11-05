@@ -121,7 +121,7 @@ pub trait CryptoGroup {
  * Group elements ought be valid by construction. Hence, no validity
  * predicate such as `G` in [CyclicGroupI.cry](../../../../../../../../../models/cryptography/cryptol/Algebra/CyclicGroupI.cry) is specified by the trait.
  */
-pub trait GroupElement: Sized + Debug + Eq {
+pub trait GroupElement: Sized + Debug + Eq + std::hash::Hash {
     /// The scalar type associated to this group
     type Scalar: GroupScalar;
 

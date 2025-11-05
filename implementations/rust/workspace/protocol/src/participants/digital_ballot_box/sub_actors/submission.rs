@@ -79,23 +79,47 @@ impl SubmissionActor {
             (SubmissionState::AwaitingBallot, SubmissionInput::NetworkMessage(msg)) => {
                 match msg {
                     ProtocolMessage::SubmitSignedBallot(signed_ballot) => {
-                        // Perform all 8 "Submit Signed Ballot Checks"
-                        self.perform_submit_signed_ballot_checks(&signed_ballot, storage)?;
+                        // Perform all 9 "Submit Signed Ballot Checks"
+                        let check_result = self.perform_submit_signed_ballot_checks(
+                            &signed_ballot,
+                            storage,
+                            bulletin_board,
+                        );
+
+                        if let Err(error_msg) = check_result {
+                            // The ballot was invalid.
+                            self.state = SubmissionState::Complete;
+                            return Ok(SubmissionOutput::SendMessage(
+                                ProtocolMessage::ReturnBallotTracker(
+                                    self.create_error_message(error_msg),
+                                ),
+                            ));
+                        };
 
                         // Store the ballot
                         self.received_ballot = Some(signed_ballot.clone());
                         self.state = SubmissionState::ProcessingBallot;
 
                         // Create and post BallotSubBulletin
-                        let tracker =
-                            self.create_and_post_bulletin(&signed_ballot, storage, bulletin_board)?;
+                        let tracker_result =
+                            self.create_and_post_bulletin(&signed_ballot, storage, bulletin_board);
+
+                        if let Err(error_msg) = tracker_result {
+                            // The ballot was invalid.
+                            self.state = SubmissionState::Complete;
+                            return Ok(SubmissionOutput::SendMessage(
+                                ProtocolMessage::ReturnBallotTracker(
+                                    self.create_error_message(error_msg),
+                                ),
+                            ));
+                        };
 
                         // Create TrackerMsg response
-                        let tracker_msg = self.create_tracker_message(tracker)?;
-
                         self.state = SubmissionState::Complete;
                         Ok(SubmissionOutput::SendMessage(
-                            ProtocolMessage::ReturnBallotTracker(tracker_msg),
+                            ProtocolMessage::ReturnBallotTracker(self.create_tracker_message(
+                                tracker_result.expect("tracker must exist here"),
+                            )),
                         ))
                     }
                     _ => Err("Expected SubmitSignedBallot message".to_string()),
@@ -108,10 +132,11 @@ impl SubmissionActor {
     // --- Submit Signed Ballot Checks (8 checks from spec) ---
 
     /// Performs all 8 "Submit Signed Ballot Checks" from the spec.
-    fn perform_submit_signed_ballot_checks<S: DBBStorage>(
+    fn perform_submit_signed_ballot_checks<S: DBBStorage, B: BulletinBoard>(
         &self,
         ballot: &SignedBallotMsg,
         storage: &S,
+        bulletin_board: &B,
     ) -> Result<(), String> {
         // Check #1: The signature is a valid signature over the message contents
         // (moved first to avoid expensive operations on invalid signatures)
@@ -138,6 +163,9 @@ impl SubmissionActor {
 
         // Check #8: All ciphertexts are encryptions for the public election key
         // Note: This is verified as part of the Naor-Yung proof verification in check #7
+
+        // Check #9: The ciphertext does not already appear on the bulletin board.
+        self.check_ciphertext_not_on_bb(ballot, bulletin_board)?;
 
         Ok(())
     }
@@ -213,6 +241,9 @@ impl SubmissionActor {
     /// Check #7: All Naor-Yung proofs verify correctly
     fn check_naor_yung_proofs(&self, ballot: &SignedBallotMsg) -> Result<(), String> {
         // Verify the Naor-Yung proof in the ballot ciphertext
+        #[crate::warning(
+            "Potentially expensive clone. Function verify_ciphertext_proof clones ciphertext internally."
+        )]
         let is_valid = verify_ciphertext_proof(
             &ballot.data.ballot_cryptogram.ciphertext,
             &self.election_public_key,
@@ -224,6 +255,24 @@ impl SubmissionActor {
             return Err("Naor-Yung proof verification failed".to_string());
         }
 
+        Ok(())
+    }
+
+    /// Check #9: Ciphertext does not already appear on bulletin board
+    fn check_ciphertext_not_on_bb<B: BulletinBoard>(
+        &self,
+        ballot: &SignedBallotMsg,
+        bulletin_board: &B,
+    ) -> Result<(), String> {
+        if bulletin_board.get_all_bulletins().iter().any(|b| match b {
+            Bulletin::BallotSubmission(bsb) => {
+                bsb.data.ballot.data.ballot_cryptogram.ciphertext
+                    == ballot.data.ballot_cryptogram.ciphertext
+            }
+            _ => false,
+        }) {
+            return Err("ciphertext already exists on bulletin board".to_string());
+        }
         Ok(())
     }
 
@@ -276,17 +325,33 @@ impl SubmissionActor {
     }
 
     /// Create a TrackerMsg to return to the VA.
-    fn create_tracker_message(&self, tracker: String) -> Result<TrackerMsg, String> {
+    fn create_tracker_message(&self, tracker: String) -> TrackerMsg {
         let data = TrackerMsgData {
             election_hash: self.election_hash,
-            tracker,
+            tracker: Some(tracker),
+            submission_result: (true, "".to_string()),
         };
 
         // Sign the tracker message
         let serialized = data.ser();
         let signature = crate::crypto::sign_data(&serialized, &self.dbb_signing_key);
 
-        Ok(TrackerMsg { data, signature })
+        TrackerMsg { data, signature }
+    }
+
+    /// Create a TrackerMsg with an error to return to the VA.
+    fn create_error_message(&self, error_msg: String) -> TrackerMsg {
+        let data = TrackerMsgData {
+            election_hash: self.election_hash,
+            tracker: None,
+            submission_result: (false, error_msg),
+        };
+
+        // Sign the tracker message
+        let serialized = data.ser();
+        let signature = crate::crypto::sign_data(&serialized, &self.dbb_signing_key);
+
+        TrackerMsg { data, signature }
     }
 }
 
@@ -451,8 +516,14 @@ mod tests {
             &mut bulletin_board,
         );
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("incorrect election hash"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            SubmissionOutput::SendMessage(ProtocolMessage::ReturnBallotTracker(msg)) => {
+                assert!(!msg.data.submission_result.0);
+                assert!(msg.data.submission_result.1.contains("election hash"));
+            }
+            _ => panic!("Expected TrackerMsg"),
+        }
     }
 
     #[test]
@@ -495,8 +566,19 @@ mod tests {
             &mut bulletin_board,
         );
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("No authorization found"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            SubmissionOutput::SendMessage(ProtocolMessage::ReturnBallotTracker(msg)) => {
+                assert!(!msg.data.submission_result.0);
+                assert!(
+                    msg.data
+                        .submission_result
+                        .1
+                        .contains("No authorization found")
+                );
+            }
+            _ => panic!("Expected TrackerMsg"),
+        }
     }
 
     // ===== Malformed Signature Tests =====
@@ -550,9 +632,14 @@ mod tests {
             &mut bulletin_board,
         );
 
-        assert!(result.is_err());
-        let error_msg = result.unwrap_err();
-        assert!(error_msg.contains("Invalid signature"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            SubmissionOutput::SendMessage(ProtocolMessage::ReturnBallotTracker(msg)) => {
+                assert!(!msg.data.submission_result.0);
+                assert!(msg.data.submission_result.1.contains("Invalid signature"));
+            }
+            _ => panic!("Expected TrackerMsg"),
+        }
     }
 
     #[test]
@@ -610,8 +697,14 @@ mod tests {
             &mut bulletin_board,
         );
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Invalid signature"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            SubmissionOutput::SendMessage(ProtocolMessage::ReturnBallotTracker(msg)) => {
+                assert!(!msg.data.submission_result.0);
+                assert!(msg.data.submission_result.1.contains("Invalid signature"));
+            }
+            _ => panic!("Expected TrackerMsg"),
+        }
     }
 
     #[test]
@@ -674,8 +767,14 @@ mod tests {
             &mut bulletin_board,
         );
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Invalid signature"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            SubmissionOutput::SendMessage(ProtocolMessage::ReturnBallotTracker(msg)) => {
+                assert!(!msg.data.submission_result.0);
+                assert!(msg.data.submission_result.1.contains("Invalid signature"));
+            }
+            _ => panic!("Expected TrackerMsg"),
+        }
     }
 
     #[test]
@@ -725,8 +824,14 @@ mod tests {
             &mut bulletin_board,
         );
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Invalid signature"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            SubmissionOutput::SendMessage(ProtocolMessage::ReturnBallotTracker(msg)) => {
+                assert!(!msg.data.submission_result.0);
+                assert!(msg.data.submission_result.1.contains("Invalid signature"));
+            }
+            _ => panic!("Expected TrackerMsg"),
+        }
     }
 
     #[test]
@@ -776,7 +881,13 @@ mod tests {
             &mut bulletin_board,
         );
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Invalid signature"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            SubmissionOutput::SendMessage(ProtocolMessage::ReturnBallotTracker(msg)) => {
+                assert!(!msg.data.submission_result.0);
+                assert!(msg.data.submission_result.1.contains("Invalid signature"));
+            }
+            _ => panic!("Expected TrackerMsg"),
+        }
     }
 }

@@ -8,8 +8,6 @@
  */
 
 #![allow(clippy::type_complexity)]
-use std::array;
-
 use crate::context::Context;
 use crate::cryptosystem::elgamal::PublicKey;
 use crate::cryptosystem::elgamal::{Ciphertext, KeyPair};
@@ -19,6 +17,7 @@ use crate::traits::groups::GroupElement;
 use crate::traits::groups::GroupScalar;
 use crate::utils::error::Error;
 use crate::zkp::dlogeq::DlogEqProof;
+use std::array;
 use vser_derive::VSerializable;
 
 /**
@@ -598,6 +597,10 @@ impl<const P: usize> ParticipantPosition<P> {
 /// - `verification_keys`: the verification keys for the `T` participants
 /// - `context`: proof context label (ZKP CONTEXT)
 ///
+/// NOTE: It is the callers responsibility to ensure that the `dfactors` and `verification_keys`
+/// correspond to each other at the same indices: the dfactor at index `i` must be computed by the
+/// participant whose verification key is at index `i`.
+///
 /// This function includes verification of partial decryptions correctness.
 ///
 /// # Errors
@@ -614,6 +617,11 @@ pub fn combine<C: Context, const T: usize, const P: usize, const W: usize>(
     let present: [ParticipantPosition<P>; T] = array::from_fn(|i| dfactors[i][0].source.clone());
     let mut divisors_acc: Vec<[C::Element; W]> = vec![<[C::Element; W]>::one(); ciphertexts.len()];
 
+    // ensure uniqueness for dfactors and verification_keys
+    // let vk_set = HashSet::<C::Element>::from_iter(verification_keys.clone().into_iter());
+    // It is not easy to construct a set for [Vec<DecryptionFactor<C, P, W>>]
+    // let dfactors_set = HashSet::<Vec<DecryptionFactor<C, P, W>>>::from_iter(dfactors.clone().into_iter());
+    #[crate::warning("Ensure that both dfactors and verification_keys are unique.")]
     for (i, dfactor) in dfactors.iter().enumerate() {
         let iter = dfactor.iter().zip(ciphertexts.iter());
         let lagrange = lagrange::<C, T, P>(&dfactor[0].source, &present);

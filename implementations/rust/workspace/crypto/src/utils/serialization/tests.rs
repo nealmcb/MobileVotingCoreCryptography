@@ -250,7 +250,7 @@ mod tests {
             String,
             u32,
             u64,
-            u16,
+            Option<u16>,
         );
 
         let count = 5;
@@ -264,7 +264,15 @@ mod tests {
             messages.iter().map(|m| keypair.encrypt(&m)).collect();
 
         let tag = "test".to_string();
-        let eg = EG(keypair, messages.clone(), ciphertexts, tag.clone(), 1, 1, 1);
+        let eg = EG(
+            keypair,
+            messages.clone(),
+            ciphertexts,
+            tag.clone(),
+            1,
+            1,
+            Some(1),
+        );
 
         let serialized = eg.ser();
 
@@ -278,6 +286,7 @@ mod tests {
         }
 
         assert_eq!(tag, back.3);
+        assert_eq!(1, back.6.unwrap());
     }
 
     #[test]

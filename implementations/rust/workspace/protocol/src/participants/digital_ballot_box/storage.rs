@@ -252,6 +252,29 @@ impl DBBStorage for InMemoryStorage {
     }
 }
 
+impl InMemoryStorage {
+    // --- Test API ---
+
+    /// Returns the number of authorized voters for testing purposes.
+    #[cfg(test)]
+    pub(crate) fn test_count_authorized_voters(&self) -> usize {
+        self.voter_authorizations.len()
+    }
+
+    /// Returns the total number of submitted ballots across all voters for testing purposes.
+    #[cfg(test)]
+    pub(crate) fn test_count_submitted_ballots(&self) -> usize {
+        self.submitted_ballots.values().map(|v| v.len()).sum()
+    }
+
+    /// Returns the set of voter pseudonyms who have cast for testing purposes.
+    /// Returns a BTreeSet for deterministic ordering.
+    #[cfg(test)]
+    pub(crate) fn test_voters_who_cast(&self) -> std::collections::BTreeSet<VoterPseudonym> {
+        self.cast_ballots.keys().cloned().collect()
+    }
+}
+
 // =============================================================================
 // Tests
 // =============================================================================

@@ -66,6 +66,11 @@ impl PartialEq for P256Element {
     }
 }
 impl Eq for P256Element {}
+impl std::hash::Hash for P256Element {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.to_affine().to_encoded_point(true).hash(state);
+    }
+}
 
 use crate::utils::serialization::{VDeserializable, VSerializable};
 

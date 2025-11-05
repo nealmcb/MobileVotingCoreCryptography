@@ -84,8 +84,12 @@ impl PartialEq for RistrettoElement {
         self.equals(other)
     }
 }
-
 impl Eq for RistrettoElement {}
+impl std::hash::Hash for RistrettoElement {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.compress().hash(state);
+    }
+}
 
 use crate::utils::serialization::{VDeserializable, VSerializable};
 

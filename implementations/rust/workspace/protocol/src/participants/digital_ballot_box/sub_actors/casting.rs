@@ -96,35 +96,95 @@ impl CastingActor {
         bulletin_board: &mut B,
     ) -> Result<CastingOutput, String> {
         // Perform all 6 validation checks
-        self.perform_cast_request_checks(&cast_req, storage, bulletin_board)?;
+        let check_result = self.perform_cast_request_checks(&cast_req, storage, bulletin_board);
 
-        // Store the cast request and ballot tracker for later use
+        // Store the cast request and ballot tracker for later use;
+        // we do this before error reporting because we need the ballot
+        // tracker from the message for error reporting, but there will
+        // be no later use then.
         let ballot_tracker = cast_req.data.ballot_tracker.clone();
         self.ballot_sub_tracker = Some(ballot_tracker.clone());
         self.cast_request = Some(cast_req.clone());
 
+        if let Err(error_msg) = check_result {
+            // The cast request was invalid.
+            self.state = CastingState::Complete;
+            return Ok(CastingOutput::SendMessage(ProtocolMessage::CastConf(
+                self.create_error_message(error_msg),
+            )));
+        }
+
         // Get the authorization message that was validated during checks
         let auth_msg = storage
             .get_voter_authorization(&cast_req.data.voter_pseudonym)?
-            .ok_or_else(|| "Voter authorization not found after validation".to_string())?;
+            .ok_or_else(|| "Voter authorization not found after validation".to_string());
+
+        if let Err(error_msg) = auth_msg {
+            // The authorization message couldn't be found.
+            self.state = CastingState::Complete;
+            return Ok(CastingOutput::SendMessage(ProtocolMessage::CastConf(
+                self.create_error_message(error_msg),
+            )));
+        }
 
         // Get the submitted ballot
         let ballot = storage
             .get_ballot_by_tracker(&ballot_tracker)?
-            .ok_or_else(|| "Ballot not found after validation".to_string())?;
+            .ok_or_else(|| "Ballot not found after validation".to_string());
 
-        // Publish the voter authorization bulletin
-        self.publish_voter_authorization(auth_msg, bulletin_board)?;
+        if let Err(error_msg) = ballot {
+            // The authorization message couldn't be found.
+            self.state = CastingState::Complete;
+            return Ok(CastingOutput::SendMessage(ProtocolMessage::CastConf(
+                self.create_error_message(error_msg),
+            )));
+        }
 
-        // Publish the ballot cast bulletin
-        let ballot_cast_tracker =
-            self.publish_ballot_cast(ballot, cast_req.clone(), bulletin_board)?;
-
-        // Mark the ballot as cast in storage
+        // Mark the ballot as cast in storage; this actually causes an error,
+        // not a response to the voter, if it fails because we need to deal with
+        // it locally... We do it _before_ attempting a write to the bulletin
+        // board, because if the write to the bulletin board fails, we can
+        // always (externally) remove the local cached cast by syncing local
+        // storage with the bulletin board; but the reverse is not the case,
+        // as the bulletin board is not modifiable. If this does fail, the
+        // calling application can retry the ballot cast after storage
+        // recovery.
         storage.store_cast_ballot(&cast_req.data.voter_pseudonym, &ballot_tracker)?;
 
+        // Publish the voter authorization bulletin
+        let publish_result = self.publish_voter_authorization(
+            auth_msg.expect("auth message must exist at this point"),
+            bulletin_board,
+        );
+
+        if let Err(error_msg) = publish_result {
+            // The authorization bulletin couldn't be published.
+            self.state = CastingState::Complete;
+            return Ok(CastingOutput::SendMessage(ProtocolMessage::CastConf(
+                self.create_error_message(error_msg),
+            )));
+        }
+
+        // Publish the ballot cast bulletin
+        let ballot_cast_tracker = self.publish_ballot_cast(
+            ballot.expect("the ballot must exist at this point"),
+            cast_req.clone(),
+            bulletin_board,
+        );
+
+        if let Err(error_msg) = ballot_cast_tracker {
+            // The cast bulletin couldn't be published.
+            self.state = CastingState::Complete;
+            return Ok(CastingOutput::SendMessage(ProtocolMessage::CastConf(
+                self.create_error_message(error_msg),
+            )));
+        }
+
         // Create and send the confirmation message
-        let conf_msg = self.create_confirmation_message(ballot_tracker, ballot_cast_tracker)?;
+        let conf_msg = self.create_confirmation_message(
+            ballot_tracker,
+            ballot_cast_tracker.expect("cast tracker must exist at this point"),
+        );
 
         self.state = CastingState::Complete;
 
@@ -340,11 +400,12 @@ impl CastingActor {
         &self,
         ballot_sub_tracker: BallotTracker,
         ballot_cast_tracker: BallotTracker,
-    ) -> Result<CastConfMsg, String> {
+    ) -> CastConfMsg {
         let data = CastConfMsgData {
             election_hash: self.election_hash,
             ballot_sub_tracker,
-            ballot_cast_tracker,
+            ballot_cast_tracker: Some(ballot_cast_tracker),
+            cast_result: (true, "".to_string()),
         };
 
         // Sign the confirmation message
@@ -352,7 +413,26 @@ impl CastingActor {
         let signature_bytes = crate::crypto::sign_data(&serialized_data, &self.dbb_signing_key);
         let signature = crate::crypto::Signature::from_bytes(&signature_bytes.to_bytes());
 
-        Ok(CastConfMsg { data, signature })
+        CastConfMsg { data, signature }
+    }
+
+    /// Create a CastConfMsg with an error to return to the VA.
+    fn create_error_message(&self, error_msg: String) -> CastConfMsg {
+        let data = CastConfMsgData {
+            election_hash: self.election_hash,
+            ballot_sub_tracker: self
+                .ballot_sub_tracker
+                .clone()
+                .expect("submit tracker must exist at this point"),
+            ballot_cast_tracker: None,
+            cast_result: (false, error_msg),
+        };
+
+        // Sign the tracker message
+        let serialized = data.ser();
+        let signature = crate::crypto::sign_data(&serialized, &self.dbb_signing_key);
+
+        CastConfMsg { data, signature }
     }
 }
 
@@ -549,8 +629,14 @@ mod tests {
             &mut bulletin_board,
         );
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Election hash mismatch"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            CastingOutput::SendMessage(ProtocolMessage::CastConf(msg)) => {
+                assert!(!msg.data.cast_result.0);
+                assert!(msg.data.cast_result.1.contains("Election hash mismatch"));
+            }
+            _ => panic!("Expected CastConfMsg"),
+        }
     }
 
     #[test]
@@ -645,8 +731,14 @@ mod tests {
             &mut bulletin_board,
         );
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("already cast"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            CastingOutput::SendMessage(ProtocolMessage::CastConf(msg)) => {
+                assert!(!msg.data.cast_result.0);
+                assert!(msg.data.cast_result.1.contains("already cast"));
+            }
+            _ => panic!("Expected CastConfMsg"),
+        }
     }
 
     // ===== Malformed Signature Tests =====
@@ -736,8 +828,14 @@ mod tests {
             &mut bulletin_board,
         );
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Invalid signature"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            CastingOutput::SendMessage(ProtocolMessage::CastConf(msg)) => {
+                assert!(!msg.data.cast_result.0);
+                assert!(msg.data.cast_result.1.contains("Invalid signature"));
+            }
+            _ => panic!("Expected CastConfMsg"),
+        }
     }
 
     #[test]
@@ -831,8 +929,14 @@ mod tests {
             &mut bulletin_board,
         );
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Invalid signature"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            CastingOutput::SendMessage(ProtocolMessage::CastConf(msg)) => {
+                assert!(!msg.data.cast_result.0);
+                assert!(msg.data.cast_result.1.contains("Invalid signature"));
+            }
+            _ => panic!("Expected CastConfMsg"),
+        }
     }
 
     #[test]
@@ -927,8 +1031,14 @@ mod tests {
             &mut bulletin_board,
         );
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Invalid signature"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            CastingOutput::SendMessage(ProtocolMessage::CastConf(msg)) => {
+                assert!(!msg.data.cast_result.0);
+                assert!(msg.data.cast_result.1.contains("Invalid signature"));
+            }
+            _ => panic!("Expected CastConfMsg"),
+        }
     }
 
     #[test]
@@ -1013,8 +1123,14 @@ mod tests {
             &mut bulletin_board,
         );
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Invalid signature"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            CastingOutput::SendMessage(ProtocolMessage::CastConf(msg)) => {
+                assert!(!msg.data.cast_result.0);
+                assert!(msg.data.cast_result.1.contains("Invalid signature"));
+            }
+            _ => panic!("Expected CastConfMsg"),
+        }
     }
 
     #[test]
@@ -1099,7 +1215,13 @@ mod tests {
             &mut bulletin_board,
         );
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Invalid signature"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            CastingOutput::SendMessage(ProtocolMessage::CastConf(msg)) => {
+                assert!(!msg.data.cast_result.0);
+                assert!(msg.data.cast_result.1.contains("Invalid signature"));
+            }
+            _ => panic!("Expected CastConfMsg"),
+        }
     }
 }

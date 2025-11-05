@@ -83,6 +83,7 @@ pub enum SubprotocolOutput {
 // --- Top-Level Actor ---
 
 // Top-level actor for EAS protocol (data)
+#[derive(Debug, Clone)]
 pub struct TopLevelActor {
     // Shared data between top-level actor and sub-actors.
     election_hash: ElectionHash,

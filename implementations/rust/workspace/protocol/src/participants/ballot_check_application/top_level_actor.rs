@@ -53,7 +53,7 @@ pub enum SubprotocolOutput {
 
 // --- Active Subprotocol Enum ---
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub enum ActiveSubprotocol {
     #[default]
     Idle,
@@ -62,6 +62,7 @@ pub enum ActiveSubprotocol {
 
 // --- Top-Level Actor ---
 
+#[derive(Clone, Debug)]
 pub struct TopLevelActor {
     active_subprotocol: ActiveSubprotocol,
     election_hash: ElectionHash,
