@@ -143,4 +143,24 @@ The concept of mobile voting naturally raises many questions, both about the ide
 
 \end{itemize}
 
+\section{Comparison with Other E2E-V Systems}
+
+\begin{itemize}
+
+    \item \emph{Q:} How does VoteSecure compare with other end-to-end verifiable voting systems like Helios, Belenios, and the Swiss Post system?
+
+    \emph{A:} VoteSecure shares some architectural similarities with other E2E-V systems but has several important differences in its threat model, privacy guarantees, and verification approach. A detailed technical comparison is available in the \href{https://github.com/FreeAndFair/MobileVotingCoreCryptography/blob/main/docs/voting-systems-comparison.md}{Voting Systems Comparison} document. Here is a summary:
+
+    \textbf{Helios:} Like Helios, VoteSecure uses ElGamal encryption and provides cast-as-intended, recorded-as-cast, and tallied-as-cast verification. However, VoteSecure differs in several key ways: (1) VoteSecure uses a mixnet for decryption (in the first version) rather than homomorphic tallying, which better supports traditional election official workflows and handles write-in candidates; (2) VoteSecure's ballot check application can run on a separate device from the voting application, providing stronger cast-as-intended verification against compromised voting clients; (3) VoteSecure is designed for mobile voting scenarios with explicit threat modeling of malicious applications on the voter's device.
+
+    \textbf{Belenios:} Belenios is an open-source E2E-V system that, like VoteSecure, emphasizes formal verification of its cryptographic protocols. Both systems provide individual and universal verifiability. VoteSecure's approach differs in that it uses rigorous digital engineering (RDE) methodology throughout, with formal refinement from high-level models down to implementation. VoteSecure also explicitly addresses the threat of advanced persistent threats (APTs) across all system environments, including mobile devices, which is particularly important for Internet voting scenarios.
+
+    \textbf{Swiss Post System:} The Swiss Post e-voting system (now discontinued after security issues were discovered) used a different approach with individual verification codes. VoteSecure's verification approach is more transparent and allows for independent verification by third parties through the public bulletin board. Unlike Swiss Post, VoteSecure is fully open source, enabling unrestricted security analysis by researchers and the public.
+
+    \textbf{Receipt-freeness:} Like Helios and most practical E2E-V systems designed for remote voting, VoteSecure does not provide receipt-freeness. A minor client-side modification could retain the randomness used in encryption, allowing voters to prove how they voted. This is an inherent trade-off in remote voting systems where the voting environment cannot be controlled---providing strong verifiability while preventing vote buying and coercion is cryptographically challenging. The threat of coercion is acknowledged in our threat model.
+
+    \textbf{Trust Model:} VoteSecure's trust model assumes that privacy requires a threshold of trustees to maintain secrecy of their key shares, similar to other mixnet-based systems. For integrity, the system is designed so that ballots cannot be changed undetectably after submission, even if some trustees are malicious. The public bulletin board and cryptographic proofs enable universal verifiability, meaning anyone can verify the correctness of the tally.
+
+\end{itemize}
+
 \end{document}
