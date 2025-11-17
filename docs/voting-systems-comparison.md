@@ -201,6 +201,6 @@ These trade-offs align with the goal of creating a mobile voting system that can
 - Benaloh Challenge: Benaloh, J. (2006). "Simple Verifiable Elections"
 
 For more information about VoteSecure specifically, see:
-- [Concept of Operations (CONOPS)](../docs/conops/conops.md)
+- [Concept of Operations (CONOPS)](conops/conops.md)
 - [Threat Model](https://github.com/FreeAndFair/MobileVotingCoreCryptography/releases/download/latest/threat-model.pdf)
 - [FAQ](https://github.com/FreeAndFair/MobileVotingCoreCryptography/releases/download/latest/faq.pdf)

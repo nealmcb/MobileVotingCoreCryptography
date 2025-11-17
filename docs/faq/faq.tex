@@ -131,6 +131,10 @@ The concept of mobile voting naturally raises many questions, both about the ide
 
     \emph{A:} As \href{https://github.com/FreeAndFair/MobileVotingCoreCryptography/releases/download/latest/threat-model.pdf}{our threat model} states, we are explicitly not addressing these sorts of system security issues as part of this project; these will need to be addressed by system implementers. However, we have designed the cryptographic protocol such that (1) voter privacy cannot be compromised without using private key material belonging to a sufficiently large number of election trustees, and (2) ballots cannot be changed in undetectable ways after being submitted by voters.
 
+    \item \emph{Q:} Can voters verify their ballots using a separate device from the one they used to vote?
+
+    \emph{A:} Yes. The ballot check application can be run from any device---voters might choose to run it from a web browser or separate app on the same device they used to vote, but verification should ideally take place on an independent device (or more than one such device) to provide stronger protection against a compromised voting application. This is a key security feature that distinguishes VoteSecure from some other E2E-V systems where verification typically occurs on the same device.
+
 \end{itemize}
 
 \section{Usability}
